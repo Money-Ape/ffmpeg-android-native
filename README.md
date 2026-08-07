@@ -31,7 +31,7 @@ This project **does NOT use Buildozer to build APKs**, but it **reuses the Andro
 
 ## ⚙️ Install Buildozer (Required for NDK)
 
-### Arch Linux
+## Arch Linux
 ```bash
 sudo pacman -S python git zip unzip openjdk-17-jdk
 python -m venv venv
