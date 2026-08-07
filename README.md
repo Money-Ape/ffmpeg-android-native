@@ -34,6 +34,8 @@ This project **does NOT use Buildozer to build APKs**, but it **reuses the Andro
 ### Arch Linux
 ```bash
 sudo pacman -S python git zip unzip openjdk-17-jdk
+python -m venv venv
+source venv/bin/activate
 pip install --upgrade buildozer cython
 ```
 
@@ -44,6 +46,8 @@ sudo apt install -y python3 python3-pip git zip unzip openjdk-17-jdk \
     autoconf libtool pkg-config zlib1g-dev libncurses5-dev \
     libncursesw5-dev libtinfo5 cmake libffi-dev libssl-dev
 
+python3 -m venv venv
+source venv/bin/activate
 pip3 install --upgrade buildozer cython
 ```
 
@@ -56,11 +60,12 @@ pip3 install --upgrade buildozer cython
 
 ## 📥 Initialize Buildozer (NDK Setup)
 
+- make sure venv is activated.!
 ### Run once:
 ```bash
 buildozer -v android debug
 ```
-- This will download: '~/.buildozer/android/platform/android-ndk-r28c'
+- This will download: `~/.buildozer/android/platform/android-ndk-r28c`
 
 ---
 
