@@ -1,69 +1,249 @@
+# ⚙️ FFmpeg Android Native
+
+Build a **native FFmpeg binary for Android (ARM64)** using Android NDK (LLVM toolchain).
+
+This repository provides a **fully automated pipeline** to:
+
+- Compile FFmpeg for Android
+- Generate a portable static binary
+- Verify binary integrity and dependencies
+
+---
+
+## 🧰 Requirements
+
+- Linux (Arch / Ubuntu / etc.)
+- Python 3
+- Android NDK (provided via Buildozer)
+
+---
+
+## 📦 Why Buildozer?
+
+This project **does NOT use Buildozer to build APKs**, but it **reuses the Android NDK installed by Buildozer**.
+
+👉 Reason:
+- Buildozer automatically installs a working Android SDK + NDK
+- Avoids manual NDK setup complexity
+- Ensures compatibility with python-for-android projects
+
+---
+
+## ⚙️ Install Buildozer (Required for NDK)
+
+### Arch Linux
+```bash
+sudo pacman -S python git zip unzip openjdk-17-jdk
+pip install --upgrade buildozer cython
+```
+
+## Debian / Ubuntu
+```bash
+sudo apt update
+sudo apt install -y python3 python3-pip git zip unzip openjdk-17-jdk \
+    autoconf libtool pkg-config zlib1g-dev libncurses5-dev \
+    libncursesw5-dev libtinfo5 cmake libffi-dev libssl-dev
+
+pip3 install --upgrade buildozer cython
+```
+
+- Debian/Ubuntu need **build dependencies explicitly installed**
+- These are required for:
+  - compiling Python modules
+  - building native dependencies (like FFmpeg)
+
+---
+
+## 📥 Initialize Buildozer (NDK Setup)
+
+### Run once:
+```bash
+buildozer -v android debug
+```
+- This will download: '~/.buildozer/android/platform/android-ndk-r28c'
+
+---
+
+## 📦 Environment Setup
+
+This repo uses Buildozer's NDK:
+
+```bash
 export ANDROID_NDK_HOME=$HOME/.buildozer/android/platform/android-ndk-r28c
-
 export TOOLCHAIN=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64
+```
 
-verify : echo $ANDROID_NDK_HOME
+Or simply run:
 
-# Clone FFMPEG
+```bash
+source ./env.sh
+```
 
-mkdir -p ~/DEV
-cd ~/DEV
+---
 
-git clone https://github.com/FFmpeg/FFmpeg.git
-cd FFmpeg
+## 🚀 Build FFmpeg
 
-# Verify toolchain
-ls $TOOLCHAIN/bin | grep aarch64-linux-android24
+```bash
+chmod +x *.sh
+./build.sh
+```
 
-## Example
-aarch64-linux-android24-clang
-aarch64-linux-android24-clang++
+What happens internally:
 
-# configure FFMPEG
-./configure \
-    --pkg-config=false \
-    --prefix=$PWD/build \
-    --target-os=android \
-    --arch=aarch64 \
-    --cpu=armv8-a \
-    --enable-cross-compile \
-    --cc=$TOOLCHAIN/bin/aarch64-linux-android24-clang \
-    --cxx=$TOOLCHAIN/bin/aarch64-linux-android24-clang++ \
-    --disable-shared \
-    --enable-static \
-    --enable-ffmpeg \
-    --disable-ffplay \
-    --disable-ffprobe \
-    --disable-doc \
-    --disable-debug \
-    --ar=$TOOLCHAIN/bin/llvm-ar
-    --nm=$TOOLCHAIN/bin/llvm-nm
-    --strip=$TOOLCHAIN/bin/llvm-strip
+- Clones FFmpeg (if not already present)
+- Cleans previous builds
+- Configures for Android ARM64
+- Compiles using LLVM toolchain
+- Outputs binary to:
 
-# Build
-make -j$(nproc)
+```
+output/ffmpeg
+```
 
-# Install
-make install
+Key build config:
 
-## Now check
-file build/bin/ffmpeg
+```
+--arch=aarch64
+--target-os=android
+--enable-static
+--disable-shared
+```
 
-# Deep Validation
-readelf -d build/bin/ffmpeg
-readelf -l build/bin/ffmpeg | grep interpreter
-llvm-readobj --needed-libs build/bin/ffmpeg
+LLVM tools used:
 
-## Example
+```
+--ar=llvm-ar
+--nm=llvm-nm
+--strip=llvm-strip
+```
+
+---
+
+## ✅ Verify Build
+
+```bash
+./verify.sh
+```
+
+This checks:
+
+- Binary format
+- Linked dependencies
+- ELF interpreter
+- Required libraries
+
+Core checks:
+
+```bash
+file output/ffmpeg
+readelf -d output/ffmpeg
+readelf -l output/ffmpeg | grep interpreter
+llvm-readobj --needed-libs output/ffmpeg
+```
+
+---
+
+## 📂 Output
+
+```
+output/ffmpeg
+```
+
+Expected:
+
+```
 ELF 64-bit LSB executable
 ARM aarch64
+```
 
-## Once You have : 'build/bin/ffmpeg'
-- Bundle it into the APK.
-- Copy it to user_data_dir on first launch.
-- Make it executable with chmod 755.
+---
 
-# Veify the binary
-readelf -d build/bin/ffmpeg
-readelf -l build/bin/ffmpeg | grep interpreter
-llvm-readobj --needed-libs build/bin/ffmpeg
+## Android Integration
+
+After building:
+
+### 1. Bundle into APK
+
+Place binary in:
+
+```
+assets/ffmpeg
+```
+
+### 2. On first app launch
+
+- Copy to `user_data_dir`
+- Make executable:
+
+```bash
+chmod 755 ffmpeg
+```
+
+### 3. Use with yt-dlp
+
+```python
+ffmpeg_location = "/path/to/ffmpeg"
+```
+
+---
+
+## Build Type
+
+This repo produces:
+
+- ✅ Static FFmpeg binary
+- ✅ No external shared dependencies
+- ✅ Portable across Android devices (ARM64)
+
+---
+
+## ⚠️ Notes
+
+- Uses modern LLVM toolchain (NDK r23+)
+- Does NOT use deprecated `--cross-prefix`
+- Compatible with python-for-android workflows
+
+---
+
+## Debugging
+
+If build fails:
+
+```bash
+make clean
+make distclean
+```
+
+Re-run:
+
+```bash
+./build.sh
+```
+
+---
+
+## Summary
+
+```bash
+source ./env.sh
+./build.sh
+./verify.sh
+```
+
+---
+
+## ✅ Status
+
+✔ FFmpeg builds successfully
+✔ ARM64 binary generated
+✔ Verified with ELF tools
+✔ Ready for Android packaging
+
+---
+
+## Future Improvements
+
+- Reduce binary size (~20MB → ~5MB)
+- Add codec selection (H264, AAC only)
+- Multi-arch builds (armv7 + arm64)
+- GitHub Actions auto-build
