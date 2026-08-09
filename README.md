@@ -1,32 +1,33 @@
 # ⚙️ FFmpeg Android Native
 
-Build **native FFmpeg binaries for Android (aarch64, x86, x86_64)** using Android NDK (LLVM toolchain).
+Build **native FFmpeg binaries for Android (aarch64, x86, x86_64)** using the Android NDK (LLVM toolchain).
 
-This repository provides a **fully automated pipeline** to:
+This repository provides a pipeline to:
 
-- Compile FFmpeg for Android
-- Generate a portable static binary
-- Verify binary integrity and dependencies
-- Supports multiple architectures (aarch64, x86, x86_64)
+- Compile a static `ffmpeg` binary for Android, one architecture at a time
+- Package it as an Android-native-library-style `.so` file so it can be exec'd from `nativeLibraryDir`
+- Sanity-check the resulting binary with ELF tools
+- Target aarch64, x86, or x86_64 per invocation
 
 ---
 
 ## 🧰 Requirements
 
 - Linux (Arch / Ubuntu / etc.)
-- Python 3
-- Android NDK (provided via Buildozer)
+- Python 3 (only needed to install/run Buildozer, not used by the build itself)
+- Android NDK (provided via Buildozer — see below)
+- `readelf` and `llvm-readobj` on your `$PATH` (or under `$TOOLCHAIN/bin`) for `verify.sh`
 
 ---
 
 ## 📦 Why Buildozer?
 
-This project **does NOT use Buildozer to build APKs**, but it **reuses the Android NDK installed by Buildozer**.
+This project **does NOT use Buildozer to build FFmpeg**, but it **reuses the Android NDK that Buildozer installs**.
 
 👉 Reason:
 - Buildozer automatically installs a working Android SDK + NDK
 - Avoids manual NDK setup complexity
-- Ensures compatibility with python-for-android projects
+- Ensures compatibility with python-for-android projects (like the app this binary ultimately ships in)
 
 ---
 
@@ -61,29 +62,31 @@ pip3 install --upgrade buildozer cython
 
 ## 📥 Initialize Buildozer (NDK Setup)
 
-- make sure venv is activated.!
+- Make sure your venv is activated.
 ### Run once:
 ```bash
 buildozer -v android debug
 ```
-- This will download: `~/.buildozer/android/platform/android-ndk-r28c`
+- This downloads the NDK to: `~/.buildozer/android/platform/android-ndk-r28c`
 
 ---
 
 ## 📦 Environment Setup
 
-This repo uses Buildozer's NDK:
+`env.sh` points at Buildozer's NDK and its LLVM toolchain:
 
 ```bash
 export ANDROID_NDK_HOME=$HOME/.buildozer/android/platform/android-ndk-r28c
 export TOOLCHAIN=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64
 ```
 
-Or simply run:
+Source it before building:
 
 ```bash
 source ./env.sh
 ```
+
+`build.sh` sources this automatically (`source ./env.sh` is the first line), so you don't need to `source` it yourself before calling `build.sh` — only before running standalone toolchain commands.
 
 ---
 
@@ -94,47 +97,66 @@ chmod +x *.sh
 ./build.sh [aarch64 | x86 | x86_64]
 ```
 
-## Example (Select Architecture)
-```bash
-You can choose which Android architecture to build:
+Build one architecture per invocation — there is no "build all archs" mode:
 
 ```bash
 ./build.sh aarch64   # Real devices (recommended)
-./build.sh x86       # (32-bit)
-./build.sh x86_64    # (64-bit)
+./build.sh x86       # 32-bit emulators
+./build.sh x86_64    # 64-bit emulators
 ```
 
-What happens internally:
+### What `build.sh` actually does
 
-- Clones FFmpeg (if not already present)
-- Cleans previous builds
-- Configures for Android ARM64, x86,x86_64 architectures
-- Compiles using LLVM toolchain
-- Outputs binary to:
+1. Sources `env.sh` and resolves the NDK toolchain paths.
+2. Maps your chosen arch to FFmpeg's expected `--arch`/`--cpu`/`--target` values (e.g. `aarch64` → `TARGET=aarch64-linux-android`, `CPU=armv8-a`).
+3. Clones `FFmpeg/FFmpeg` if the `FFmpeg/` directory doesn't already exist (it does **not** re-clone on subsequent runs).
+4. Runs `make clean && make distclean` inside `FFmpeg/` to clear any previous arch's build state.
+5. Runs `./configure` against **API level 24**, using the NDK's LLVM `clang`/`clang++` as the cross-compiler and `llvm-ar` / `llvm-nm` / `llvm-strip` as the binutils, with:
+   ```
+   --disable-shared --enable-static
+   --enable-ffmpeg --disable-ffplay --disable-ffprobe
+   --disable-doc --disable-debug
+   --disable-x86asm --disable-inline-asm --disable-asm --disable-runtime-cpudetect
+   ```
+6. Builds with `make -j$(nproc)`, teeing output to `build-<arch>.log` in the `FFmpeg/` directory.
+```bash
+./build.sh <arch> 2>&1 | tee build-<arch>.log
+```
+7. `make install`s into `FFmpeg/build-$ARCH/`.
+8. Copies the compiled binary into this repo's output tree (see **Output** below) — both as a plain `ffmpeg` executable and as `libffmpegbin.so`, and `chmod +x`'s both.
+
+---
+
+## 📂 Output
+
+Output is **per-architecture**, under `ffmpeg-native-bin/`, not under a flat `output/` folder:
 
 ```
-output/
-├── ffmpeg-aarch64
-├── ffmpeg-x86
-└── ffmpeg-x86_64
+ffmpeg-native-bin/
+└── ffmpeg-<arch>/
+    ├── ffmpeg                      # plain executable
+    └── libffmpeg/
+        └── libffmpegbin.so         # identical binary, renamed .so
 ```
 
-Key build config:
+For example, after `./build.sh aarch64`:
 
 ```
---arch=aarch64
---target-os=android
---enable-static
---disable-shared
+ffmpeg-native-bin/ffmpeg-aarch64/ffmpeg
+ffmpeg-native-bin/ffmpeg-aarch64/libffmpeg/libffmpegbin.so
 ```
 
-LLVM tools used:
+Expected ELF format per arch:
 
+```yaml
+aarch64  → ELF 64-bit ARM
+x86      → ELF 32-bit Intel 80386
+x86_64   → ELF 64-bit x86-64
 ```
---ar=llvm-ar
---nm=llvm-nm
---strip=llvm-strip
-```
+
+**Build once per architecture you need** — running `./build.sh x86` after `./build.sh aarch64` overwrites `FFmpeg/`'s build state but writes to a separate `ffmpeg-native-bin/ffmpeg-x86/` directory, so prior archs' outputs aren't clobbered.
+
+⚠️ If you're packaging for multiple architectures (arm64-v8a + x86 + x86_64) into one APK, make sure each arch's `libffmpegbin.so` actually comes from that arch's own `ffmpeg-native-bin/ffmpeg-<arch>/` output — copying one arch's binary into another arch's native-lib folder produces an `Exec format error` at runtime on that device.
 
 ---
 
@@ -144,66 +166,29 @@ LLVM tools used:
 ./verify.sh
 ```
 
-This checks:
+What it checks:
 
-- Binary format
-- Linked dependencies
-- ELF interpreter
-- Required libraries
+- Binary format (`file`)
+- Linked dependencies (`readelf -d`)
+- ELF interpreter (`readelf -l | grep interpreter`)
+- Needed libraries (`llvm-readobj --needed-libs`)
 
-Core checks:
-
-```bash
-file output/ffmpeg-<arch> # Example: file output/ffmpeg-x86_64
-readelf -d output/ffmpeg
-readelf -l output/ffmpeg | grep interpreter
-llvm-readobj --needed-libs output/ffmpeg
-```
-
----
-
-## 📂 Output
-
-```
-output/ffmpeg
-```
-
-Expected:
-
-```yaml
-aarch64  → ELF 64-bit ARM
-x86      → ELF 32-bit Intel 80386
-x86_64   → ELF 64-bit x86-64
-```
+Since the build uses `--disable-shared --enable-static`, `readelf -d` and the needed-libs check should come back essentially empty — that's expected, not a failure.
 
 ---
 
 ## Android Integration
 
-After building:
+The `.so`-renamed binary isn't a packaging accident — it's required. Android's app packager only extracts files under `lib/<abi>/` that end in `.so` into the app's **`nativeLibraryDir`**, which is the one place on the device guaranteed to be executable (`assets/` and external/scoped storage are commonly mounted `noexec` on modern Android and can't run arbitrary binaries placed there).
 
-### 1. Bundle into APK
-
-Place binary in:
+### Bundle into the APK as a native lib, not an asset
 
 ```
-assets/ffmpeg
+lib/arm64-v8a/libffmpegbin.so   ← from ffmpeg-native-bin/ffmpeg-aarch64/libffmpeg/libffmpegbin.so
+lib/x86/libffmpegbin.so         ← from ffmpeg-native-bin/ffmpeg-x86/libffmpeg/libffmpegbin.so
+lib/x86_64/libffmpegbin.so      ← from ffmpeg-native-bin/ffmpeg-x86_64/libffmpeg/libffmpegbin.so
 ```
-
-### 2. On first app launch
-
-- Copy to `user_data_dir`
-- Make executable:
-
-```bash
-chmod 755 ffmpeg
-```
-
-### 3. Use with yt-dlp
-
-```python
-ffmpeg_location = "/path/to/ffmpeg"
-```
+With python-for-android, this is typically wired up via a local recipe that copies each arch's build output into the corresponding `lib/<abi>/` slot for that arch — **not** the same binary copied into every slot (that's what produces `Exec format error` on mismatched-arch devices).
 
 ---
 
@@ -211,27 +196,31 @@ ffmpeg_location = "/path/to/ffmpeg"
 
 This repo produces:
 
-- ✅ Static FFmpeg binary
+- ✅ Static FFmpeg binary (`--disable-shared --enable-static`)
 - ✅ No external shared dependencies
-- ✅ Portable across Android devices (multi-arch support)
+- ✅ `ffmpeg` only — no `ffplay`, no real `ffprobe`
+- ✅ Portable across Android devices, one binary per architecture (not a universal/fat binary)
 
 ---
 
 ## ⚠️ Notes
 
-- Uses modern LLVM toolchain (NDK r23+)
-- Does NOT use deprecated `--cross-prefix`
+- Uses the modern LLVM toolchain (Buildozer's NDK r28c)
+- Does **not** use the deprecated `--cross-prefix` approach
 - Compatible with python-for-android workflows
+- Built with `--disable-asm`/`--disable-x86asm`/`--disable-inline-asm`/`--disable-runtime-cpudetect` — this trades some performance for build reliability across NDK/toolchain versions; revisit if you need faster encodes
 
 ---
 
 ## Debugging
 
-If build fails:
+If a build fails partway through:
 
 ```bash
+cd FFmpeg
 make clean
 make distclean
+cd ..
 ```
 
 Re-run:
@@ -240,24 +229,26 @@ Re-run:
 ./build.sh <arch>
 ```
 
+Per-arch build logs are saved at `FFmpeg/build-<arch>.log` — check there first for the actual compiler/linker error before re-running.
+
 ---
 
 ## Summary
 
 ```bash
-source ./env.sh
-./build.sh <arch>
-./verify.sh
+source ./env.sh          # optional standalone — build.sh sources this itself
+./build.sh <arch>        # aarch64 | x86 | x86_64, one at a time
+./verify.sh               # see the path caveat above before relying on this
 ```
 
 ---
 
 ## ✅ Status
 
-✔ FFmpeg builds successfully
-✔ ARM64 binary generated
-✔ Verified with ELF tools
-✔ Ready for Android packaging
+✔ FFmpeg (`ffmpeg`-only, no `ffprobe`/`ffplay`) builds successfully per-arch
+✔ arm64 (`aarch64`) binary generated and confirmed working when packaged as `libffmpegbin.so` under `lib/<abi>/`
+✔ Verified with ELF tools (once pointed at the correct output path)
+✔ Ready for Android packaging, one arch at a time — mixing binaries across arch folders breaks at runtime
 
 ---
 
@@ -265,8 +256,9 @@ source ./env.sh
 
 - Reduce binary size (~20MB → ~5MB)
 - Add codec selection (H264, AAC only)
-- Multi-arch builds (armv7 + arm64, x86, x86_64)
-- GitHub Actions auto-build
+- Actually build a real `ffprobe` binary instead of `--disable-ffprobe` + reusing `ffmpeg` under that name
+- Single invocation to build all three archs in one pass
+- GitHub Actions auto-build per arch
 
 ---
 
@@ -275,4 +267,11 @@ source ./env.sh
 - **aarch64 (ARM64)** → Required for real Android devices
 - **x86 / x86_64** → Used for emulators (AVD, Genymotion)
 
-👉 For production builds, only `aarch64` is needed.
+👉 For production builds targeting real devices, only `aarch64` is needed — building/bundling the other archs without verifying each one's `libffmpegbin.so` is genuinely arch-correct is what causes `Exec format error` crashes on emulators or mismatched devices.
+
+## 📦 Used In
+ 
+The `aarch64` build from this repo is bundled as `libffmpegbin.so` in **Tubit**, a YouTube/Instagram Video Downloader app:
+ 
+[![Tubit v1.5](https://img.shields.io/badge/Tubit-v1.5-58A6FF?style=for-the-badge&logo=android&logoColor=white)](https://github.com/Money-Ape/Tubit/releases/tag/v1.5)
+ 
