@@ -1,12 +1,13 @@
 # ⚙️ FFmpeg Android Native
 
-Build a **native FFmpeg binary for Android (ARM64)** using Android NDK (LLVM toolchain).
+Build **native FFmpeg binaries for Android (aarch64, x86, x86_64)** using Android NDK (LLVM toolchain).
 
 This repository provides a **fully automated pipeline** to:
 
 - Compile FFmpeg for Android
 - Generate a portable static binary
 - Verify binary integrity and dependencies
+- Supports multiple architectures (aarch64, x86, x86_64)
 
 ---
 
@@ -90,19 +91,32 @@ source ./env.sh
 
 ```bash
 chmod +x *.sh
-./build.sh
+./build.sh [aarch64 | x86 | x86_64]
+```
+
+## Example (Select Architecture)
+```bash
+You can choose which Android architecture to build:
+
+```bash
+./build.sh aarch64   # Real devices (recommended)
+./build.sh x86       # (32-bit)
+./build.sh x86_64    # (64-bit)
 ```
 
 What happens internally:
 
 - Clones FFmpeg (if not already present)
 - Cleans previous builds
-- Configures for Android ARM64
+- Configures for Android ARM64, x86,x86_64 architectures
 - Compiles using LLVM toolchain
 - Outputs binary to:
 
 ```
-output/ffmpeg
+output/
+├── ffmpeg-aarch64
+├── ffmpeg-x86
+└── ffmpeg-x86_64
 ```
 
 Key build config:
@@ -140,7 +154,7 @@ This checks:
 Core checks:
 
 ```bash
-file output/ffmpeg
+file output/ffmpeg-<arch> # Example: file output/ffmpeg-x86_64
 readelf -d output/ffmpeg
 readelf -l output/ffmpeg | grep interpreter
 llvm-readobj --needed-libs output/ffmpeg
@@ -156,9 +170,10 @@ output/ffmpeg
 
 Expected:
 
-```
-ELF 64-bit LSB executable
-ARM aarch64
+```yaml
+aarch64  → ELF 64-bit ARM
+x86      → ELF 32-bit Intel 80386
+x86_64   → ELF 64-bit x86-64
 ```
 
 ---
@@ -198,7 +213,7 @@ This repo produces:
 
 - ✅ Static FFmpeg binary
 - ✅ No external shared dependencies
-- ✅ Portable across Android devices (ARM64)
+- ✅ Portable across Android devices (multi-arch support)
 
 ---
 
@@ -222,7 +237,7 @@ make distclean
 Re-run:
 
 ```bash
-./build.sh
+./build.sh <arch>
 ```
 
 ---
@@ -231,7 +246,7 @@ Re-run:
 
 ```bash
 source ./env.sh
-./build.sh
+./build.sh <arch>
 ./verify.sh
 ```
 
@@ -250,5 +265,14 @@ source ./env.sh
 
 - Reduce binary size (~20MB → ~5MB)
 - Add codec selection (H264, AAC only)
-- Multi-arch builds (armv7 + arm64)
+- Multi-arch builds (armv7 + arm64, x86, x86_64)
 - GitHub Actions auto-build
+
+---
+
+## 🧠 Architecture Notes
+
+- **aarch64 (ARM64)** → Required for real Android devices
+- **x86 / x86_64** → Used for emulators (AVD, Genymotion)
+
+👉 For production builds, only `aarch64` is needed.
