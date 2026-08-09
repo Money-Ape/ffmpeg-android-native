@@ -1,6 +1,6 @@
 #!/bin/bash
 
-BIN=output/ffmpeg
+BIN=ffmpeg-native-bin/ffmpeg
 
 echo "[+] Checking binary..."
 file $BIN
