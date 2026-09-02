@@ -1,5 +1,9 @@
 # ⚙️ FFmpeg Android Native
 
+<p align="center">
+  <img src="assets/FFmpeg_banner.png" alt="PassCore Banner">
+</p>
+
 Build **native FFmpeg binaries for Android (aarch64, x86, x86_64)** using the Android NDK (LLVM toolchain).
 
 This repository provides a pipeline to:
